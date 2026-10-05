@@ -1,46 +1,61 @@
-name: Build APK
+name: Build Android APK
+
 on:
   push:
-    branches: [ main ]
+    branches: [ "main" ]
   workflow_dispatch:
-permissions:
-  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node 20
+        uses: actions/setup-node@v4
         with:
           node-version: 20
-      - uses: actions/setup-java@v4
+          cache: npm
+
+      - name: Setup Java 17
+        uses: actions/setup-java@v4
         with:
-          distribution: temurin
-          java-version: 21
-      - name: Setup Capacitor
+          java-version: '17'
+          distribution: 'temurin'
+          cache: gradle
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Capacitor Android
+        run: npm install @capacitor/android @capacitor/cli @capacitor/core
+
+      - name: Build web assets
+        run: npm run build
+
+      - name: Verify web build output
         run: |
-          npm init -y
-          npm install @capacitor/core @capacitor/cli @capacitor/android
-          npx cap init "تكسير الطوب الايونية" "com.yourname.polishedgame" --web-dir www
-          npx cap add android
-          npx cap sync android
+          if [ ! -f dist/index.html ] && [ ! -f build/index.html ]; then
+            echo "ERROR: index.html not found in dist/ or build/"
+            exit 1
+          fi
+
+      - name: Add Android platform
+        run: npx cap add android || true
+
+      - name: Sync Capacitor with Android
+        run: npx cap sync android
+
+      - name: Grant gradle permission
+        run: chmod +x android/gradlew
+
       - name: Build APK
-        run: |
-          cd android
-          chmod +x gradlew
-          ./gradlew assembleDebug --no-daemon
-      - name: Collect APK
-        run: |
-          mkdir -p out
-          cp android/app/build/outputs/apk/debug/app-debug.apk out/app.apk
-      - name: Upload artifact
+        run: cd android && ./gradlew assembleDebug
+
+      - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: app-apk
-          path: out/*.apk
-      - name: Publish release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: v${{ github.run_number }}
-          name: تكسير الطوب الايونية - build ${{ github.run_number }}
-          files: out/*.apk
+          name: app-debug-apk
+          path: android/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
